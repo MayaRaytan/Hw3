@@ -2,5 +2,5 @@
 #define BUFFER_SIZE = 128
 
 static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsigned long ioctl_param);
+
 device_channels *device_files;
-device_files = (device_channels *)kmalloc(sizeof(device_channels), GFP_KERNEL);
