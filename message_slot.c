@@ -93,13 +93,13 @@ static ssize_t device_read(struct file* file, char __user* buffer, size_t length
     unsigned long channel;
     char* message;
 
-    channel = file->file_descriptor->channel->channel;
+    channel = file->private_data->channel->channel;
 
     if (channel == NULL){
         return -EINVAL;
     }
 
-    message = channel->message;
+    message = file->private_data->channel->message;
 
     if (message == NULL){
         return -EWOULDBLOCK;
@@ -116,8 +116,35 @@ static ssize_t device_read(struct file* file, char __user* buffer, size_t length
     return 1;
 }
 
-static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset){
+static ssize_t device_write(struct file* file, const char __user* buffer, size_t length) {
+    int i;
+    unsigned long channel;
+    char* message;
 
+    channel = file->private_data->channel->channel;
+    if (channel == NULL){
+        return -EINVAL;
+    }
+
+    if (length > 128 || length < 0){
+        return -EMSGSIZE;
+    }
+
+    message = file->private_data->channel->message;
+    message = (char*)kmalloc(sizeof(char)*length), GFP_KERNEL);
+    if (message == NULL){
+        return -1;
+    }
+
+    for (i = 0; i < strlen(message); i++) {
+        get_user(message[i], &buffer[i]);
+    }
+
+
+}
+
+void free_file(struct file* file){
+    kfree(file->private_data);
 }
 
 /* rec06 */
@@ -138,7 +165,6 @@ static int __init simple_init(void) {
     if( rc < 0 ) {
         return rc;
     }
-
     return 0;
 }
 

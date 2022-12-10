@@ -13,7 +13,6 @@ int main(int argc, char *argv[]) {
     char *message_file_path;
     unsigned long target_message_channel_id;
     char *message_to_pass;
-    device *d;
     int idx;
     int fd;
     int bytes;
@@ -22,7 +21,7 @@ int main(int argc, char *argv[]) {
         message_file_path = argv[1];
         target_message_channel_id = atoi(argv[2]);
         message_to_pass = argv[3];
-        if ((fd = open(file, O_WRONLY, 0777)) == -1) {
+        if ((fd = open(message_file_path, O_WRONLY, 0777)) == -1) {
             perror_exit_1();
         }
 
