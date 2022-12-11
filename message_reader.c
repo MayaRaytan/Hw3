@@ -33,16 +33,19 @@ int main(int argc, char *argv[]) {
             perror_exit_1();
         }
 
+        /* read message from channel to user buffer */
         buffer = (struct char*)kmalloc(sizeof(char)*message_len, GFP_KERNEL);
         if (message_len = read(fd, buffer, 128) <= 0){
             perror_exit_1();
         }
         close(fd);
 
+        /* write message from user buffer to stdout */
         if (write(STDOUT_FILENO, buffer, message_len) != message_len){
             perror_exit_1();
         }
 
+        free(buffer);
         exit(0);
     }
 
