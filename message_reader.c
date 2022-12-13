@@ -17,7 +17,6 @@ int main(int argc, char *argv[]) {
     unsigned int target_message_channel_id;
     int fd;
     char *buffer;
-    int message_len;
 
     if (argc == 3) {
         message_file_path = argv[1];
@@ -29,13 +28,13 @@ int main(int argc, char *argv[]) {
         }
 
         /* set channel id*/
-        if (ioctal(fd, MSG_SLOT_CHANNEL, target_message_channel_id) == -1){
+        if (ioctl(fd, MSG_SLOT_CHANNEL, target_message_channel_id) == -1){
             perror_exit_1();
         }
 
         /* read message from channel to user buffer */
-        buffer = (struct char*)kmalloc(sizeof(char)*message_len, GFP_KERNEL);
-        if (message_len = read(fd, buffer, 128) <= 0){
+        buffer = (char*)kmalloc(sizeof(char)*message_len, GFP_KERNEL);
+        if ((message_len = read(fd, buffer, 128)) <= 0){
             perror_exit_1();
         }
         close(fd);
