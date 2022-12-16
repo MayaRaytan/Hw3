@@ -3,6 +3,8 @@
 #undef MODULE
 #define MODULE
 
+#include "message_slot.h"
+
 /* code from recitation */
 #include <linux/slab.h>
 #include <linux/kernel.h>   /* We're doing kernel work */
@@ -10,7 +12,9 @@
 #include <linux/fs.h>       /* for register_chrdev */
 #include <linux/uaccess.h>  /* for get_user and put_user */
 #include <linux/string.h>   /* for memset. NOTE - not string.h!*/
-#include "mesage_slot.h"
+#include <linux/fcntl.h>      /* open */
+#include <linux/unistd.h>     /* exit */
+#include <linux/errno.h>
 
 MODULE_LICENSE("GPL");
 
@@ -25,40 +29,58 @@ struct device_channels {
     struct device_channels* next;
 };
 
-struct device_channels last_channel(struct device_channels* channel) {
+static struct device_channels* device_files[257];
+
+struct device_channels* last_channel(struct device_channels* channel);
+struct device_channels* get_channel(struct device_channels* head, unsigned long channel_id);
+static int device_open(struct inode* inode, struct file* file);
+static int device_release(struct inode* inode, struct file* file);
+static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsigned long ioctl_param);
+static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset);
+static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset);
+static int __init simple_init(void);
+void free_file(struct file* file);
+void free_devices_list(void);
+static void __exit simple_cleanup(void);
+
+
+struct device_channels* last_channel(struct device_channels* channel) {
     struct device_channels* head;
     head = channel;
-    while (head->next){
+    while (head != NULL && head->next != NULL){
         head = head->next;
     }
     return head;
 }
 
-struct device_channels* get_channel(struct device_channels* head, unsigned int channel_id){
+struct device_channels* get_channel(struct device_channels* head, unsigned long channel_id){
     struct device_channels* channel_node;
     channel_node = head;
     while (channel_node != NULL){
         if (channel_node->channel == channel_id){
             return channel_node;
         }
+        channel_node = channel_node->next;
     }
     return NULL;
 }
 
 
-static int device_open(struct file* file, struct inode* inode) {
-    int idx, minor;
+static int device_open(struct inode* inode, struct file* file) {
+    int minor;
     struct device_channels* device_channel;
-    struct file_descriptor file_des*;
+    struct file_descriptor* file_des;
 
+    /* update file -> private data*/
     minor = iminor(inode);
-
-    file_des = (struct file_descriptor*)kmalloc(sizeof(file_descriptor), GFP_KERNEL);
-    if (file_des == NULL){
-        return -ENOMEM;
+    if (file->private_data == NULL) {
+        file_des = (struct file_descriptor *) kmalloc(sizeof(struct file_descriptor), GFP_KERNEL);
+        if (file_des == NULL) {
+            return -ENOMEM;
+        }
+        file_des->minor = minor;
+        file->private_data = file_des;
     }
-    file_des->minor = minor;
-    file->private_data=file_des;
 
     /* crete a new device */
     if (device_files[minor] == NULL) {
@@ -72,54 +94,67 @@ static int device_open(struct file* file, struct inode* inode) {
 }
 
 
-static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsigned int ioctl_param){
+static int device_release(struct inode* inode, struct file* file) {
+    free_file(file);
+    return 0;
+}
+
+
+static long device_ioctl(struct file* file, unsigned int ioctl_command_id, unsigned long ioctl_param){
     int minor;
-    struct device_channels* exist_channel;
     struct device_channels* last_device_channel;
     struct device_channels* new_device_channel;
+    struct device_channels* exist_channel;
 
     if (ioctl_command_id != MSG_SLOT_CHANNEL || ioctl_param == 0) {
         return -EINVAL;
     }
 
-    minor = file->private_data->minor;
+    minor = ((struct file_descriptor*)(file->private_data))->minor;
 
     /* check */
     if (device_files[minor] == NULL){
-        return -1
+        return -1;
     }
 
-    exist_channel = get_channel(device_files[minor], channel_id);
+    exist_channel = get_channel(device_files[minor], ioctl_param);
+
     if (exist_channel == NULL){
         last_device_channel = last_channel(device_files[minor]);
-
         new_device_channel = (struct device_channels*) kmalloc(sizeof(struct device_channels), GFP_KERNEL);
         if (new_device_channel == NULL){
-            return 0;
+            return -ENOMEM;
         }
-
         new_device_channel->channel = ioctl_param;
         last_device_channel->next = new_device_channel;
         exist_channel = new_device_channel;
     }
 
-    file->private_data->channel = new_device_channel;
+    ((struct file_descriptor*)(file->private_data))->channel = exist_channel;
 
-    /* ????????????????????????? */
-    return ioctl_param;
+    return 0;
 }
 
-static ssize_t device_read(struct file* file, char __user* buffer, size_t length){
+static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset){
     ssize_t i;
-    unsigned int channel;
+    unsigned long channel;
+    struct device_channels* channel_struct;
     char* message;
+    struct file_descriptor* file_des;
 
-    channel = file->private_data->channel->channel;
-    if (channel == NULL){
+    file_des = (struct file_descriptor*)file->private_data;
+    if (file_des == NULL){
         return -EINVAL;
     }
 
-    message = file->private_data->channel->message;
+    channel_struct = (struct device_channels*)file_des->channel;
+    if (channel_struct == NULL){
+        return -EINVAL;
+    }
+
+    channel = (unsigned long)(channel_struct->channel);
+
+    message = (char*) (channel_struct->message);
     if (message == NULL){
         return -EWOULDBLOCK;
     }
@@ -129,36 +164,48 @@ static ssize_t device_read(struct file* file, char __user* buffer, size_t length
     }
 
     for (i = 0; i < strlen(message); i++) {
-        put_user(message[i], &buffer[i]);
+        if (put_user(message[i], &buffer[i]) < 0){
+            return -EFAULT;
+        }
     }
-
     return i;
 }
 
-static ssize_t device_write(struct file* file, const char __user* buffer, size_t length) {
+static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset) {
     ssize_t i;
     unsigned long channel;
     char* message;
+    struct file_descriptor* file_des;
+    struct device_channels* channel_struct;
 
-    channel = file->private_data->channel->channel;
-    if (channel == NULL){
+    file_des = (struct file_descriptor*)(file->private_data);
+
+    if (file_des == NULL){
+        return -EINVAL;
+    }
+    channel_struct = (struct device_channels*)(file_des->channel);
+    if (channel_struct == NULL){
         return -EINVAL;
     }
 
-    if (length > 128 || length < 0){
+    channel = channel_struct->channel;
+
+    if (length > BUFFER_SIZE || length <= 0){
         return -EMSGSIZE;
     }
 
-    message = (char*)kmalloc(sizeof(char)*length), GFP_KERNEL);
+    message = (char*)kmalloc(sizeof(char)*length, GFP_KERNEL);
     if (message == NULL){
         return -ENOMEM;
     }
 
     for (i = 0; i < strlen(message); i++) {
-        get_user(message[i], &buffer[i]);
+        if (get_user(message[i], &buffer[i]) < 0){
+            return -EFAULT;
+        }
     }
 
-    file->private_data->channel->message = message;
+    ((struct device_channels*)(file_des->channel))->message = message;
 
     return i;
 }
@@ -175,29 +222,6 @@ struct file_operations Fops = {
         .release        = device_release,
 };
 
-void free_file(struct file* file){
-    kfree(file->private_data);
-}
-
-static int device_release(struct inode* inode, struct file* file) {
-    free_file(file);
-    return 0;
-}
-
-void free_devices(){
-    /* iterate over device_files and free all channels */
-    for (i = 0; i < 256; i++){
-        head = device_files[i];
-        prev = head
-        while (head != NULL){
-            head = head->next;
-            kfree(prev);
-            prev = head;
-        }
-        kfree(device_files[i])
-    }
-}
-
 static int __init simple_init(void) {
     int rc;
 //    memset(&device_info, 0, sizeof(struct chardev_info));
@@ -205,18 +229,37 @@ static int __init simple_init(void) {
     if( rc < 0 ) {
         return rc;
     }
-    device_files = (struct device_channels*)kmalloc(256*sizeof(struct device_channels), GFP_KERNEL);
-    if (device_files == NULL){
-        return -ENOMEM;
-    }
     return 0;
 }
 
-static void __exit simple_cleanup(void) {
+void free_file(struct file* file){
+    kfree(file->private_data);
+}
+
+
+void free_devices_list(void){
     int i;
-    struct device_channels* head, prev;
+    struct device_channels* head;
+    struct device_channels* prev;
+    /* iterate over device_files and free all channels */
+    for (i = 0; i < 257; i++){
+        head = device_files[i];
+        prev = head;
+        while (head != NULL){
+            head = head->next;
+            if (prev->message != NULL){
+                kfree(prev->message);
+            }
+            kfree(prev);
+            prev = head;
+        }
+    }
+}
+
+
+static void __exit simple_cleanup(void) {
     unregister_chrdev(MAJOR_NUMBER, "Message_slot");
-    free_devices();
+    free_devices_list();
 }
 
 

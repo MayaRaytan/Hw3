@@ -1,7 +1,11 @@
-#include "mesage_slot.h"
+#include "message_slot.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <fcntl.h>      /* open */
+#include <unistd.h>     /* exit */
+#include <stdio.h>
 
 int perror_exit_1();
 
@@ -41,5 +45,6 @@ int main(int argc, char *argv[]) {
     else{
         perror_exit_1();
     }
+    return 0;
 
 }

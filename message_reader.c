@@ -1,7 +1,11 @@
-#include "mesage_slot.h"
+#include "message_slot.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <fcntl.h>      /* open */
+#include <unistd.h>     /* exit */
+#include <stdio.h>
 
 #define STDOUT_FILENO 1
 
@@ -33,8 +37,8 @@ int main(int argc, char *argv[]) {
         }
 
         /* read message from channel to user buffer */
-        buffer = (char*)kmalloc(sizeof(char)*message_len, GFP_KERNEL);
-        if ((message_len = read(fd, buffer, 128)) <= 0){
+        buffer = (char*)malloc(sizeof(char) * BUFFER_SIZE);
+        if ((message_len = read(fd, buffer, BUFFER_SIZE)) <= 0){
             perror_exit_1();
         }
         close(fd);
