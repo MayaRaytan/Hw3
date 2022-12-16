@@ -18,37 +18,41 @@ int perror_exit_1() {
 
 int main(int argc, char *argv[]) {
     char *message_file_path;
-    unsigned int target_message_channel_id;
+    unsigned long target_message_channel_id;
     int fd;
-    char *buffer;
+    char buffer[BUFFER_SIZE];
 
     if (argc == 3) {
         message_file_path = argv[1];
         target_message_channel_id = atoi(argv[2]);
         size_t message_len;
         /* open file */
-        if ((fd = open(message_file_path, O_RDONLY, 0777)) == -1) {
+        fd = open(message_file_path, O_RDWR);
+        if (fd < 0) {
             perror_exit_1();
         }
 
         /* set channel id*/
-        if (ioctl(fd, MSG_SLOT_CHANNEL, target_message_channel_id) == -1){
+        if (ioctl(fd, MSG_SLOT_CHANNEL, target_message_channel_id) < 0){
             perror_exit_1();
         }
 
         /* read message from channel to user buffer */
-        buffer = (char*)malloc(sizeof(char) * BUFFER_SIZE);
-        if ((message_len = read(fd, buffer, BUFFER_SIZE)) <= 0){
+        message_len = read(fd, buffer, BUFFER_SIZE);
+        if (message_len < 0){
             perror_exit_1();
         }
-        close(fd);
+
+        if (close(fd) < 0){
+            perror_exit_1();
+        }
+
 
         /* write message from user buffer to stdout */
-        if (write(STDOUT_FILENO, buffer, message_len) != message_len){
+        if (write(STDOUT_FILENO, buffer, message_len) < 0){
             perror_exit_1();
         }
 
-        free(buffer);
         exit(0);
     }
 

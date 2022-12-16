@@ -25,7 +25,8 @@ int main(int argc, char *argv[]) {
         target_message_channel_id = atoi(argv[2]);
         message_to_pass = argv[3];
         /* open file */
-        if ((fd = open(message_file_path, O_WRONLY, 0777)) == -1) {
+        fd = open(message_file_path, O_RDWR);
+        if (fd == -1) {
             perror_exit_1();
         }
 
@@ -35,10 +36,12 @@ int main(int argc, char *argv[]) {
         }
 
         /* write message to channel */
-        if (write(fd, message_to_pass, strlen(message_to_pass)) != strlen(message_to_pass)){
+        if (write(fd, message_to_pass, strlen(message_to_pass)) < 0){
             perror_exit_1();
         }
-        close(fd);
+        if (close(fd) < 0){
+            perror_exit_1();
+        }
         exit(0);
     }
 
